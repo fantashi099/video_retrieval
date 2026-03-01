@@ -1,0 +1,10 @@
+transnetv2-pytorch
+opencv-python
+numpy
+qdrant-client
+yt-dlp
+sqlalchemy
+psycopg2-binary
+alembic
+celery
+redis
