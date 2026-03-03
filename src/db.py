@@ -13,5 +13,12 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     print("Done!")
 
+def reset_db():
+    print("Dropping all database tables...")
+    Base.metadata.drop_all(bind=engine)
+    print("Recreating database tables...")
+    Base.metadata.create_all(bind=engine)
+    print("Done!")
+
 if __name__ == "__main__":
     init_db()
