@@ -141,14 +141,19 @@ def segment_video_task(self, video_path: str, youtube_id: str):
 def embed_segments_task(self, scene_list: list, video_path: str, youtube_id: str):
     print(f"Starting embedding task for {len(scene_list)} scenes from {youtube_id}")
     import torch
-    from transformers import CLIPProcessor, CLIPModel
+    from transformers import SiglipImageProcessor, SiglipModel
     from PIL import Image
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Loading CLIP model on {device}...")
-    model_id = "openai/clip-vit-base-patch32"
-    model = CLIPModel.from_pretrained(model_id).to(device)
-    processor = CLIPProcessor.from_pretrained(model_id)
+    compute_dtype = torch.float16 if device == "cuda" else torch.float32
+    print(f"Loading SigLIP model on {device} ({compute_dtype})...")
+    model_id = "google/siglip2-base-patch16-224"
+    model = SiglipModel.from_pretrained(
+        model_id,
+        attn_implementation='sdpa',
+        torch_dtype=compute_dtype,
+    ).to(device)
+    processor = SiglipImageProcessor.from_pretrained(model_id)
 
     cap = cv2.VideoCapture(video_path)
     
@@ -172,7 +177,7 @@ def embed_segments_task(self, scene_list: list, video_path: str, youtube_id: str
         # Get encoding
         inputs = processor(images=pil_image, return_tensors="pt").to(device)
         with torch.no_grad():
-            output = model.get_image_features(pixel_values=inputs.pixel_values)
+            output = model.get_image_features(pixel_values=inputs.pixel_values.to(compute_dtype))
             
         if hasattr(output, 'image_embeds'):
             image_features = output.image_embeds
@@ -222,7 +227,7 @@ def store_vectors_task(self, vectors: list, youtube_id: str):
     
     QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
     QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6333))
-    COLLECTION_NAME = "video_segments"
+    COLLECTION_NAME = "video_segments_siglip"
     
     client = QdrantClient(QDRANT_HOST, port=QDRANT_PORT)
     
