@@ -24,7 +24,7 @@ def download_video_task(self, video_url: str):
     
     try:
         ydl_opts = {
-            'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'format': 'bestvideo[ext=mp4][vcodec^=avc1][height<=720]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             'outtmpl': os.path.join(TMP_DIR, '%(id)s.%(ext)s'),
             'quiet': False,
             'no_warnings': True,
@@ -32,7 +32,6 @@ def download_video_task(self, video_url: str):
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Extract info first
             info = ydl.extract_info(video_url, download=False)
             youtube_id = info.get('id')
             title = info.get('title')
@@ -57,7 +56,6 @@ def download_video_task(self, video_url: str):
             db.add(video)
             db.commit()
             
-            # Download the video
             print(f"Downloading video {youtube_id}...")
             error_code = ydl.download([video_url])
             
@@ -133,7 +131,132 @@ def segment_video_task(self, video_path: str, youtube_id: str):
     torch.cuda.empty_cache()
     gc.collect()
     
-    # TODO: Pass scene_list to embedding task
-    # embed_segments_task.delay(scene_list, video_path, youtube_id)
+    # Trigger embedding task
+    print("Triggering embed_segments_task...")
+    embed_segments_task.delay(scene_list, video_path, youtube_id)
     
     return {"youtube_id": youtube_id, "num_scenes": len(scene_list)}
+
+@celery_app.task(bind=True)
+def embed_segments_task(self, scene_list: list, video_path: str, youtube_id: str):
+    print(f"Starting embedding task for {len(scene_list)} scenes from {youtube_id}")
+    import torch
+    from transformers import CLIPProcessor, CLIPModel
+    from PIL import Image
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Loading CLIP model on {device}...")
+    model_id = "openai/clip-vit-base-patch32"
+    model = CLIPModel.from_pretrained(model_id).to(device)
+    processor = CLIPProcessor.from_pretrained(model_id)
+
+    cap = cv2.VideoCapture(video_path)
+    
+    vectors = []
+    
+    for scene in scene_list:
+        start_frame = scene["start_frame"]
+        end_frame = scene["end_frame"]
+        
+        mid_frame = start_frame + (end_frame - start_frame) // 2
+        cap.set(cv2.CAP_PROP_POS_FRAMES, mid_frame)
+        ret, frame = cap.read()
+        
+        if not ret:
+            print(f"Warning: Could not read frame {mid_frame}")
+            continue
+            
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        pil_image = Image.fromarray(frame_rgb)
+        
+        # Get encoding
+        inputs = processor(images=pil_image, return_tensors="pt").to(device)
+        with torch.no_grad():
+            output = model.get_image_features(pixel_values=inputs.pixel_values)
+            
+        if hasattr(output, 'image_embeds'):
+            image_features = output.image_embeds
+        elif hasattr(output, 'pooler_output'):
+            image_features = output.pooler_output
+        elif isinstance(output, tuple):
+            image_features = output[0]
+        else:
+            image_features = output
+        
+        image_features = image_features / image_features.norm(p=2, dim=-1, keepdim=True)
+        vector = image_features.cpu().numpy()[0].tolist()
+        
+        vectors.append({
+            "scene_idx": scene["scene_idx"],
+            "start_time": scene["start_time"],
+            "end_time": scene["end_time"],
+            "vector": vector
+        })
+
+    cap.release()
+    
+    if not vectors:
+        print(f"Error: Generated 0 embeddings for {youtube_id}. Video might be unreadable.")
+        return {"youtube_id": youtube_id, "embeddings_count": 0, "status": "failed"}
+
+    print(f"Successfully generated {len(vectors)} embeddings (Dimension: {len(vectors[0]['vector'])}).")
+    
+    # Free VRAM
+    del model
+    torch.cuda.empty_cache()
+    gc.collect()
+
+    # Trigger Vector Storage Task
+    print("Triggering store_vectors_task...")
+    store_vectors_task.delay(vectors, youtube_id)
+
+    return {"youtube_id": youtube_id, "embeddings_count": len(vectors)}
+
+@celery_app.task(bind=True)
+def store_vectors_task(self, vectors: list, youtube_id: str):
+    print(f"Starting vector storage task for {youtube_id} ({len(vectors)} vectors)")
+    
+    from qdrant_client import QdrantClient
+    from qdrant_client.models import PointStruct, VectorParams, Distance
+    import uuid
+    
+    QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
+    QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6333))
+    COLLECTION_NAME = "video_segments"
+    
+    client = QdrantClient(QDRANT_HOST, port=QDRANT_PORT)
+    
+    vector_size = len(vectors[0]["vector"]) if vectors else 512
+    
+    if not client.collection_exists(COLLECTION_NAME):
+        print(f"Creating collection '{COLLECTION_NAME}' with size {vector_size}...")
+        client.create_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
+        )
+        
+    points = []
+    for point in vectors:
+        point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{youtube_id}_{point['scene_idx']}"))
+        
+        payload = {
+            "youtube_id": youtube_id,
+            "scene_idx": point["scene_idx"],
+            "start_time": point["start_time"],
+            "end_time": point["end_time"]
+        }
+        
+        points.append(
+            PointStruct(id=point_id, vector=point["vector"], payload=payload)
+        )
+        
+    print(f"Uploading {len(points)} points to Qdrant...")
+    operation_info = client.upsert(
+        collection_name=COLLECTION_NAME,
+        wait=True,
+        points=points
+    )
+    
+    print(f"Upload finished. Status: {operation_info.status}")
+    
+    return {"youtube_id": youtube_id, "status": operation_info.status, "points_inserted": len(points)}
