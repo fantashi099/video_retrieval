@@ -4,7 +4,7 @@ import time
 import logging
 import torch
 import transformers
-from transformers import AutoProcessor, SiglipModel, SiglipTokenizer
+from transformers import SiglipImageProcessor, SiglipModel, SiglipTokenizer
 from PIL import Image
 import io
 
@@ -23,7 +23,7 @@ siglip_model = SiglipModel.from_pretrained(
     attn_implementation='sdpa',
     torch_dtype=compute_dtype,
 ).to(device)
-siglip_processor = AutoProcessor.from_pretrained(model_id)
+siglip_processor = SiglipImageProcessor.from_pretrained(model_id)
 siglip_tokenizer = SiglipTokenizer.from_pretrained("google/siglip-base-patch16-224")
 
 class ModelServiceServicer(model_service_pb2_grpc.ModelServiceServicer):
