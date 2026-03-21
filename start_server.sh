@@ -1,4 +1,6 @@
 #!/bin/bash
+# Clean up background processes when this script stops
+trap 'echo "Stopping services..."; kill $(jobs -p) 2>/dev/null; exit' SIGINT SIGTERM EXIT
 
 echo "Starting server reset..."
 sudo rm -rf pg_data

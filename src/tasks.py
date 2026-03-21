@@ -72,8 +72,10 @@ def download_video_task(self, video_url: str, job_id: str = None):
                 filepath = os.path.join(TMP_DIR, f"{youtube_id}.mp4")
                 if os.path.exists(filepath):
                     print(f"Successfully downloaded to {filepath}")
-                    video.status = StatusEnum.INDEXED
-                    job.status = StatusEnum.INDEXED
+                    # Update status to segmenting
+                    video.status = StatusEnum.PROCESSING
+                    job.status = StatusEnum.PROCESSING
+                    job.error_log = "Downloading complete. Segmenting video..."
                     db.commit()
                     
                     print("Triggering segment_video_task...")
@@ -256,5 +258,19 @@ def store_vectors_task(self, vectors: list, youtube_id: str):
     )
     
     print(f"Upload finished. Status: {operation_info.status}")
+    
+    # Mark job and video as fully INDEXED
+    db = SessionLocal()
+    try:
+        job = db.query(Job).filter(Job.video_url.contains(youtube_id)).first()
+        vid = db.query(Video).filter(Video.youtube_id == youtube_id).first()
+        if job:
+            job.status = StatusEnum.INDEXED
+            job.error_log = "Success"
+        if vid:
+            vid.status = StatusEnum.INDEXED
+        db.commit()
+    finally:
+        db.close()
     
     return {"youtube_id": youtube_id, "status": operation_info.status, "points_inserted": len(points)}

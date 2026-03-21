@@ -94,25 +94,35 @@ class ModelServiceServicer(model_service_pb2_grpc.ModelServiceServicer):
                 context.set_details("No images provided.")
                 return model_service_pb2.EmbedImageBatchResponse()
                 
-            inputs = siglip_processor(images=images, return_tensors="pt").to(device)
+            batch_size = 8
+            all_vectors = []
             
-            with torch.no_grad():
-                output = siglip_model.get_image_features(pixel_values=inputs.pixel_values.to(compute_dtype))
+            for i in range(0, len(images), batch_size):
+                chunk = images[i:i + batch_size]
+                inputs = siglip_processor(images=chunk, return_tensors="pt").to(device)
                 
-            if hasattr(output, 'image_embeds'):
-                image_features = output.image_embeds
-            elif hasattr(output, 'pooler_output'):
-                image_features = output.pooler_output
-            elif isinstance(output, tuple):
-                image_features = output[0]
-            else:
-                image_features = output
+                with torch.no_grad():
+                    output = siglip_model.get_image_features(pixel_values=inputs.pixel_values.to(compute_dtype))
+                    
+                if hasattr(output, 'image_embeds'):
+                    image_features = output.image_embeds
+                elif hasattr(output, 'pooler_output'):
+                    image_features = output.pooler_output
+                elif isinstance(output, tuple):
+                    image_features = output[0]
+                else:
+                    image_features = output
+                    
+                image_features = image_features / image_features.norm(p=2, dim=-1, keepdim=True)
+                chunk_vectors = image_features.cpu().numpy().tolist()
+                all_vectors.extend(chunk_vectors)
                 
-            image_features = image_features / image_features.norm(p=2, dim=-1, keepdim=True)
-            vectors = image_features.cpu().numpy().tolist()
+                # Free VRAM for next chunk proactively
+                del inputs, output, image_features
+                torch.cuda.empty_cache()
             
             response = model_service_pb2.EmbedImageBatchResponse()
-            for vec in vectors:
+            for vec in all_vectors:
                 emb = response.embeddings.add()
                 emb.vector.extend(vec)
             
