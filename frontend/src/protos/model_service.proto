@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package model_service;
+
+service ModelService {
+  // Get text embedding
+  rpc EmbedText(EmbedTextRequest) returns (EmbedTextResponse);
+  
+  // Get embedding for a single image
+  rpc EmbedImage(EmbedImageRequest) returns (EmbedImageResponse);
+  
+  // Get embeddings for a batch of images (highly efficient for video frames)
+  rpc EmbedImageBatch(EmbedImageBatchRequest) returns (EmbedImageBatchResponse);
+}
+
+// ---------------- Text Embedding ----------------
+
+message EmbedTextRequest {
+  string text = 1;
+}
+
+message EmbedTextResponse {
+  repeated float embedding = 1;
+}
+
+// ---------------- Image Embedding ----------------
+
+message EmbedImageRequest {
+  bytes image_data = 1;
+}
+
+message EmbedImageResponse {
+  repeated float embedding = 1;
+}
+
+// ---------------- Batch Image Embedding ----------------
+
+message EmbedImageBatchRequest {
+  repeated bytes image_data_list = 1;
+}
+
+message EmbedImageBatchResponse {
+  repeated Embedding embeddings = 1;
+}
+
+message Embedding {
+  repeated float vector = 1;
+}
