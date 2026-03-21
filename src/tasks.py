@@ -11,14 +11,23 @@ from src.models import Video, Job, StatusEnum
 TMP_DIR = "tmp/"
 
 @celery_app.task(bind=True)
-def download_video_task(self, video_url: str):
-    print(f"Starting download task for {video_url}")
+def download_video_task(self, video_url: str, job_id: str = None):
+    print(f"Starting download task for {video_url} (Job: {job_id})")
     os.makedirs(TMP_DIR, exist_ok=True)
     
     db = SessionLocal()
-    # Create or get job
-    job = Job(video_url=video_url, status=StatusEnum.PROCESSING)
-    db.add(job)
+    
+    if job_id:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            print(f"Warning: Job {job_id} not found in DB.")
+            job = Job(id=job_id, video_url=video_url, status=StatusEnum.PROCESSING)
+            db.add(job)
+    else:
+        # Fallback if called directly without job_id
+        job = Job(video_url=video_url, status=StatusEnum.PROCESSING)
+        db.add(job)
+        
     db.commit()
     db.refresh(job)
     
@@ -141,8 +150,12 @@ def segment_video_task(self, video_path: str, youtube_id: str):
 def embed_segments_task(self, scene_list: list, video_path: str, youtube_id: str):
     print(f"Starting embedding task for {len(scene_list)} scenes from {youtube_id}")
     import torch
+    import transformers
     from transformers import SiglipImageProcessor, SiglipModel
     from PIL import Image
+
+    # Hide the "Loading weights" progress bar
+    transformers.logging.set_verbosity_error()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     compute_dtype = torch.float16 if device == "cuda" else torch.float32

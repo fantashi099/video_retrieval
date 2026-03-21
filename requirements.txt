@@ -10,3 +10,6 @@ celery
 redis
 transformers
 Pillow
+grpcio
+grpcio-tools
+sentencepiece
