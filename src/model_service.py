@@ -124,7 +124,11 @@ class ModelServiceServicer(model_service_pb2_grpc.ModelServiceServicer):
             return model_service_pb2.EmbedImageBatchResponse()
 
 def serve():
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    options = [
+        ('grpc.max_send_message_length', 100 * 1024 * 1024),
+        ('grpc.max_receive_message_length', 100 * 1024 * 1024)
+    ]
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10), options=options)
     model_service_pb2_grpc.add_ModelServiceServicer_to_server(ModelServiceServicer(), server)
     
     port = '50052'

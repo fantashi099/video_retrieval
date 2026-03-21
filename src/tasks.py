@@ -181,7 +181,11 @@ def embed_segments_task(self, scene_list: list, video_path: str, youtube_id: str
         return {"youtube_id": youtube_id, "embeddings_count": 0, "status": "failed"}
 
     print(f"Sending {len(images_bytes)} frames to ModelService over gRPC...")
-    with grpc.insecure_channel('localhost:50052') as channel:
+    options = [
+        ('grpc.max_send_message_length', 100 * 1024 * 1024),
+        ('grpc.max_receive_message_length', 100 * 1024 * 1024)
+    ]
+    with grpc.insecure_channel('localhost:50052', options=options) as channel:
         stub = model_service_pb2_grpc.ModelServiceStub(channel)
         req = model_service_pb2.EmbedImageBatchRequest(image_data_list=images_bytes)
         res = stub.EmbedImageBatch(req)
