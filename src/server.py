@@ -10,27 +10,7 @@ from src.db import SessionLocal
 from src.models import Job, Video, StatusEnum
 from src.tasks import download_video_task
 
-import torch
-import transformers
-from transformers import AutoProcessor, SiglipModel, SiglipTokenizer
 from qdrant_client import QdrantClient
-
-transformers.logging.set_verbosity_error()
-
-# Global Model Loading for Search
-device = "cuda" if torch.cuda.is_available() else "cpu"
-compute_dtype = torch.float16 if device == "cuda" else torch.float32
-
-print(f"Loading SigLIP model for text search on {device} ({compute_dtype})...")
-model_id = "google/siglip2-base-patch16-224"
-siglip_model = SiglipModel.from_pretrained(
-    model_id,
-    attn_implementation='sdpa',
-    torch_dtype=compute_dtype,
-).to(device)
-
-print("Loading SigLIP Tokenizer...")
-siglip_tokenizer = SiglipTokenizer.from_pretrained("google/siglip-base-patch16-224")
 
 QDRANT_HOST = 'localhost'
 QDRANT_PORT = 6333
@@ -102,23 +82,19 @@ class VideoSearchServiceServicer(video_search_pb2_grpc.VideoSearchServiceService
             return response
             
         try:
-            # 1. Embed the search text using the tokenizer
-            inputs = siglip_tokenizer(text=[query_text], padding="max_length", return_tensors="pt").to(device)
-            with torch.no_grad():
-                text_outputs = siglip_model.get_text_features(input_ids=inputs.input_ids)
+            # 1. Embed the search text using ModelService microservice
+            from src.protos import model_service_pb2, model_service_pb2_grpc
+            with grpc.insecure_channel('localhost:50052') as channel:
+                model_stub = model_service_pb2_grpc.ModelServiceStub(channel)
+                embed_req = model_service_pb2.EmbedTextRequest(text=query_text)
+                embed_res = model_stub.EmbedText(embed_req)
                 
-                if hasattr(text_outputs, 'text_embeds'):
-                    text_features = text_outputs.text_embeds
-                elif hasattr(text_outputs, 'pooler_output'):
-                    text_features = text_outputs.pooler_output
-                elif isinstance(text_outputs, tuple):
-                    text_features = text_outputs[0]
-                else:
-                    text_features = text_outputs
+            if not embed_res.embedding:
+                context.set_code(grpc.StatusCode.INTERNAL)
+                context.set_details("Failed to get embedding from ModelService.")
+                return response
                 
-                # Normalize exactly like the image vectors
-                text_features = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
-                query_vector = text_features.cpu().numpy()[0].tolist()
+            query_vector = list(embed_res.embedding)
 
             # 2. Search Qdrant using the new query_points API
             search_results = qdrant_client.query_points(

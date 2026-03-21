@@ -57,3 +57,4 @@ Thumbs.db
 data/*
 qdrant_data
 tmp
+src/protos/*pb2*

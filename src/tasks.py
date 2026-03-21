@@ -149,28 +149,14 @@ def segment_video_task(self, video_path: str, youtube_id: str):
 @celery_app.task(bind=True)
 def embed_segments_task(self, scene_list: list, video_path: str, youtube_id: str):
     print(f"Starting embedding task for {len(scene_list)} scenes from {youtube_id}")
-    import torch
-    import transformers
-    from transformers import SiglipImageProcessor, SiglipModel
-    from PIL import Image
-
-    # Hide the "Loading weights" progress bar
-    transformers.logging.set_verbosity_error()
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    compute_dtype = torch.float16 if device == "cuda" else torch.float32
-    print(f"Loading SigLIP model on {device} ({compute_dtype})...")
-    model_id = "google/siglip2-base-patch16-224"
-    model = SiglipModel.from_pretrained(
-        model_id,
-        attn_implementation='sdpa',
-        torch_dtype=compute_dtype,
-    ).to(device)
-    processor = SiglipImageProcessor.from_pretrained(model_id)
+    import grpc
+    from src.protos import model_service_pb2, model_service_pb2_grpc
 
     cap = cv2.VideoCapture(video_path)
     
     vectors = []
+    images_bytes = []
+    valid_scenes = []
     
     for scene in scene_list:
         start_frame = scene["start_frame"]
@@ -184,45 +170,35 @@ def embed_segments_task(self, scene_list: list, video_path: str, youtube_id: str
             print(f"Warning: Could not read frame {mid_frame}")
             continue
             
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        pil_image = Image.fromarray(frame_rgb)
+        _, buffer = cv2.imencode('.jpg', frame)
+        images_bytes.append(buffer.tobytes())
+        valid_scenes.append(scene)
+
+    cap.release()
+    
+    if not images_bytes:
+        print(f"Error: Generated 0 embeddings for {youtube_id}. Video might be unreadable.")
+        return {"youtube_id": youtube_id, "embeddings_count": 0, "status": "failed"}
+
+    print(f"Sending {len(images_bytes)} frames to ModelService over gRPC...")
+    with grpc.insecure_channel('localhost:50052') as channel:
+        stub = model_service_pb2_grpc.ModelServiceStub(channel)
+        req = model_service_pb2.EmbedImageBatchRequest(image_data_list=images_bytes)
+        res = stub.EmbedImageBatch(req)
         
-        # Get encoding
-        inputs = processor(images=pil_image, return_tensors="pt").to(device)
-        with torch.no_grad():
-            output = model.get_image_features(pixel_values=inputs.pixel_values.to(compute_dtype))
-            
-        if hasattr(output, 'image_embeds'):
-            image_features = output.image_embeds
-        elif hasattr(output, 'pooler_output'):
-            image_features = output.pooler_output
-        elif isinstance(output, tuple):
-            image_features = output[0]
-        else:
-            image_features = output
+    if len(res.embeddings) != len(valid_scenes):
+        print("Error: Mismatch in number of embeddings returned from ModelService.")
+        return {"youtube_id": youtube_id, "embeddings_count": 0, "status": "failed"}
         
-        image_features = image_features / image_features.norm(p=2, dim=-1, keepdim=True)
-        vector = image_features.cpu().numpy()[0].tolist()
-        
+    for scene, emb_obj in zip(valid_scenes, res.embeddings):
         vectors.append({
             "scene_idx": scene["scene_idx"],
             "start_time": scene["start_time"],
             "end_time": scene["end_time"],
-            "vector": vector
+            "vector": list(emb_obj.vector)
         })
 
-    cap.release()
-    
-    if not vectors:
-        print(f"Error: Generated 0 embeddings for {youtube_id}. Video might be unreadable.")
-        return {"youtube_id": youtube_id, "embeddings_count": 0, "status": "failed"}
-
     print(f"Successfully generated {len(vectors)} embeddings (Dimension: {len(vectors[0]['vector'])}).")
-    
-    # Free VRAM
-    del model
-    torch.cuda.empty_cache()
-    gc.collect()
 
     # Trigger Vector Storage Task
     print("Triggering store_vectors_task...")
