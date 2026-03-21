@@ -84,7 +84,7 @@ export default function Home() {
                   <iframe
                     width="100%"
                     height="100%"
-                    src={`https://www.youtube.com/embed/${result.youtubeId}?start=${Math.floor(result.startTime)}`}
+                    src={`https://www.youtube.com/embed/${result.youtube_id}?start=${Math.floor(result.start_time)}`}
                     title="YouTube video player"
                     frameBorder="0"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -94,16 +94,16 @@ export default function Home() {
                 </div>
                 <div className="p-5 space-y-2">
                   <div className="flex justify-between items-start">
-                    <h3 className="font-semibold text-lg line-clamp-1" title={result.youtubeId}>
-                      Video: {result.youtubeId}
+                    <h3 className="font-semibold text-lg line-clamp-1" title={result.youtube_id}>
+                      Video: {result.youtube_id}
                     </h3>
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-900/50 text-indigo-300 border border-indigo-700/50">
-                      Score: {result.matchScore.toFixed(3)}
+                      Score: {result.match_score.toFixed(3)}
                     </span>
                   </div>
                   <div className="flex items-center text-sm text-slate-400 gap-4">
-                    <span>🎬 Scene {result.sceneIdx}</span>
-                    <span>⏱️ {result.startTime.toFixed(1)}s - {result.endTime.toFixed(1)}s</span>
+                    <span>🎬 Scene {result.scene_idx}</span>
+                    <span>⏱️ {result.start_time.toFixed(1)}s - {result.end_time.toFixed(1)}s</span>
                   </div>
                 </div>
               </div>

@@ -29,6 +29,9 @@ export default function RootLayout({
               <Link href="/" className="text-sm font-medium text-slate-300 hover:text-white transition-colors">
                 Search
               </Link>
+              <Link href="/videos" className="text-sm font-medium text-slate-300 hover:text-white transition-colors">
+                Data
+              </Link>
               <Link href="/ingest" className="text-sm font-medium text-slate-300 hover:text-white transition-colors">
                 Ingest
               </Link>

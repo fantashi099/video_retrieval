@@ -11,6 +11,9 @@ service VideoSearchService {
   
   // Job Status
   rpc GetJobStatus(JobStatusRequest) returns (JobStatusResponse);
+  
+  // List all videos
+  rpc ListVideos(ListVideosRequest) returns (ListVideosResponse);
 }
 
 // Ingestion Messages
@@ -49,4 +52,19 @@ message SearchResult {
 
 message SearchResponse {
   repeated SearchResult results = 1;
+}
+
+// List Videos Messages
+message ListVideosRequest {}
+
+message VideoInfo {
+  string youtube_id = 1;
+  string title = 2;
+  string url = 3;
+  string status = 4;
+  int32 duration = 5;
+}
+
+message ListVideosResponse {
+  repeated VideoInfo videos = 1;
 }

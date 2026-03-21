@@ -120,6 +120,28 @@ class VideoSearchServiceServicer(video_search_pb2_grpc.VideoSearchServiceService
             context.set_details(str(e))
             return response
 
+    def ListVideos(self, request, context):
+        logging.info("Received ListVideos request.")
+        response = video_search_pb2.ListVideosResponse()
+        db = SessionLocal()
+        try:
+            videos = db.query(Video).order_by(Video.created_at.desc()).all()
+            for v in videos:
+                info = response.videos.add()
+                info.youtube_id = v.youtube_id
+                info.title = v.title or ""
+                info.url = v.url
+                info.status = v.status.value if v.status else "UNKNOWN"
+                info.duration = int(v.duration) if v.duration else 0
+            return response
+        except Exception as e:
+            logging.error(f"Error listing videos: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return response
+        finally:
+            db.close()
+
 def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     video_search_pb2_grpc.add_VideoSearchServiceServicer_to_server(VideoSearchServiceServicer(), server)

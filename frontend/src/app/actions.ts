@@ -40,3 +40,16 @@ export async function getJobStatusAction(jobId: string): Promise<any> {
         });
     });
 }
+
+export async function listVideosAction(): Promise<any> {
+    return new Promise((resolve) => {
+        grpcClient.ListVideos({}, (err: any, response: any) => {
+            if (err) {
+                console.error("gRPC Error in ListVideos:", err);
+                resolve({ error: err.message });
+            } else {
+                resolve({ videos: response.videos || [] });
+            }
+        });
+    });
+}
