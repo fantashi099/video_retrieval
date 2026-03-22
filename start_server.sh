@@ -21,4 +21,4 @@ echo "Starting Model Service..."
 python -m src.model_service &
 
 echo "Starting Celery worker..."
-python -m celery -A src.celery_app worker --loglevel=info
+python -m celery -A src.celery_app worker -B --loglevel=info

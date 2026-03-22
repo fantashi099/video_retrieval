@@ -29,6 +29,7 @@ class Job(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     video_url = Column(String, nullable=False)
+    video_name = Column(String, nullable=True)
     status = Column(Enum(StatusEnum), default=StatusEnum.PENDING)
     error_log = Column(Text, nullable=True)
     retry_count = Column(Integer, default=0)

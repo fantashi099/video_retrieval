@@ -17,3 +17,11 @@ celery_app.conf.update(
     timezone='UTC',
     enable_utc=True,
 )
+
+from celery.schedules import crontab
+celery_app.conf.beat_schedule = {
+    'fail-stuck-jobs': {
+        'task': 'src.tasks.fail_stuck_jobs_task',
+        'schedule': crontab(minute='*/5'),
+    },
+}

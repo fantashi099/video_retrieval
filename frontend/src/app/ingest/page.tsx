@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ingestVideoAction, getJobStatusAction } from "../actions";
+import { BatchUpload } from "./BatchUpload";
 
 export default function IngestPage() {
     const [url, setUrl] = useState("");
@@ -125,6 +126,8 @@ export default function IngestPage() {
                     </div>
                 </div>
             )}
+
+            <BatchUpload />
         </div>
     );
 }

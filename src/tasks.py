@@ -7,12 +7,13 @@ import gc
 from src.celery_app import celery_app
 from src.db import SessionLocal
 from src.models import Video, Job, StatusEnum
+from datetime import datetime, timezone, timedelta
 
 TMP_DIR = "tmp/"
 
 @celery_app.task(bind=True)
-def download_video_task(self, video_url: str, job_id: str = None):
-    print(f"Starting download task for {video_url} (Job: {job_id})")
+def download_video_task(self, video_url: str, job_id: str = None, video_name: str = None):
+    print(f"Starting download task for {video_url} (Job: {job_id}, Name: {video_name})")
     os.makedirs(TMP_DIR, exist_ok=True)
     
     db = SessionLocal()
@@ -21,11 +22,11 @@ def download_video_task(self, video_url: str, job_id: str = None):
         job = db.query(Job).filter(Job.id == job_id).first()
         if not job:
             print(f"Warning: Job {job_id} not found in DB.")
-            job = Job(id=job_id, video_url=video_url, status=StatusEnum.PROCESSING)
+            job = Job(id=job_id, video_url=video_url, video_name=video_name, status=StatusEnum.PROCESSING)
             db.add(job)
     else:
         # Fallback if called directly without job_id
-        job = Job(video_url=video_url, status=StatusEnum.PROCESSING)
+        job = Job(video_url=video_url, video_name=video_name, status=StatusEnum.PROCESSING)
         db.add(job)
         
     db.commit()
@@ -43,7 +44,7 @@ def download_video_task(self, video_url: str, job_id: str = None):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=False)
             youtube_id = info.get('id')
-            title = info.get('title')
+            title = video_name if video_name else info.get('title')
             duration = info.get('duration')
             
             # Check for duplicate
@@ -102,8 +103,20 @@ def segment_video_task(self, video_path: str, youtube_id: str):
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"Video file not found: {video_path}")
 
-    print("Loading TransNetV2 model...")
-    model = TransNetV2()
+    
+    # Dynamic VRAM Management: TransNetV2 uses a lot of memory for big videos.
+    # If the system has very low free VRAM (< 2.5 GB), we force TransNet to use the CPU
+    # which is slower but prevents Out-Of-Memory (OOM) crashes.
+    device = 'auto'
+    if torch.cuda.is_available():
+        free_mem, total_mem = torch.cuda.mem_get_info()
+        print(f"GPU VRAM Status: {free_mem / 1024**3:.2f} GB free out of {total_mem / 1024**3:.2f} GB max")
+        if free_mem < 2.5 * 1024 * 1024 * 1024:  # 2.5 GB threshold
+            print("WARNING: Low VRAM detected! Forcing TransNetV2 to CPU mode to prevent OOM crash.")
+            device = 'cpu'
+            
+    print(f"Loading TransNetV2 model on device: {device}...")
+    model = TransNetV2(device=device)
     
     # Get FPS
     cap = cv2.VideoCapture(video_path)
@@ -274,3 +287,29 @@ def store_vectors_task(self, vectors: list, youtube_id: str):
         db.close()
     
     return {"youtube_id": youtube_id, "status": operation_info.status, "points_inserted": len(points)}
+
+@celery_app.task
+def fail_stuck_jobs_task():
+    db = SessionLocal()
+    try:
+        # Define timeout for stuck tasks (1 hour)
+        timeout_threshold = datetime.now(timezone.utc) - timedelta(hours=1)
+        
+        stuck_jobs = db.query(Job).filter(
+            Job.status == StatusEnum.PROCESSING,
+            Job.updated_at < timeout_threshold
+        ).all()
+        
+        count = 0
+        for job in stuck_jobs:
+            job.status = StatusEnum.FAILED
+            job.error_log = "Watchdog: Job timed out (worker crashed or hung)."
+            count += 1
+            
+        if count > 0:
+            db.commit()
+            print(f"Watchdog marked {count} stuck jobs as FAILED.")
+    except Exception as e:
+        print(f"Watchdog error: {e}")
+    finally:
+        db.close()

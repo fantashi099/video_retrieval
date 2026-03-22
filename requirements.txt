@@ -13,3 +13,5 @@ Pillow
 grpcio
 grpcio-tools
 sentencepiece
+pandas
+pyarrow

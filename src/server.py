@@ -21,12 +21,13 @@ class VideoSearchServiceServicer(video_search_pb2_grpc.VideoSearchServiceService
     
     def IngestVideo(self, request, context):
         video_url = request.video_url
-        logging.info(f"Received IngestVideo request for: {video_url}")
+        video_name = request.video_name
+        logging.info(f"Received IngestVideo request for: {video_url} (name: {video_name})")
         
         db = SessionLocal()
         try:
             # Create a job synchronously to return the job_id
-            job = Job(video_url=video_url, status=StatusEnum.PENDING)
+            job = Job(video_url=video_url, video_name=video_name, status=StatusEnum.PENDING)
             db.add(job)
             db.commit()
             db.refresh(job)
@@ -34,7 +35,7 @@ class VideoSearchServiceServicer(video_search_pb2_grpc.VideoSearchServiceService
             job_id_str = str(job.id)
             
             # Fire the celery background task
-            download_video_task.delay(video_url, job_id_str)
+            download_video_task.delay(video_url, job_id_str, video_name)
             
             return video_search_pb2.IngestResponse(
                 job_id=job_id_str,
@@ -47,6 +48,51 @@ class VideoSearchServiceServicer(video_search_pb2_grpc.VideoSearchServiceService
             return video_search_pb2.IngestResponse(message="Internal error.")
         finally:
             db.close()
+
+    def ParseBatchFile(self, request, context):
+        import pandas as pd
+        import io
+        try:
+            filename = request.filename.lower()
+            file_bytes = io.BytesIO(request.file_content)
+            
+            if filename.endswith('.csv'):
+                df = pd.read_csv(file_bytes)
+            elif filename.endswith('.parquet'):
+                df = pd.read_parquet(file_bytes)
+            elif filename.endswith('.tsv') or filename.endswith('.txt'):
+                df = pd.read_csv(file_bytes, sep='\t')
+            else:
+                context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+                context.set_details("Unsupported file format. Use .csv, .tsv, or .parquet")
+                return video_search_pb2.ParseFileResponse(error_message="Unsupported file format")
+                
+            response = video_search_pb2.ParseFileResponse()
+            
+            # normalize columns to handle case differences
+            df.columns = [c.lower().strip() for c in df.columns]
+            
+            if 'url' not in df.columns or 'video_name' not in df.columns:
+                context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+                context.set_details("File must contain 'video_name' and 'url' columns.")
+                return video_search_pb2.ParseFileResponse(error_message="Missing required columns")
+                
+            # Fill NaN values with empty string
+            df = df.fillna('')
+            for _, row in df.iterrows():
+                name = str(row['video_name']).strip()
+                url = str(row['url']).strip()
+                if name and url:
+                    vid = response.videos.add()
+                    vid.video_name = name
+                    vid.url = url
+                    
+            return response
+        except Exception as e:
+            logging.error(f"Error parsing file: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return video_search_pb2.ParseFileResponse(error_message=str(e))
 
     def GetJobStatus(self, request, context):
         job_id = request.job_id

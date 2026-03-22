@@ -14,11 +14,15 @@ service VideoSearchService {
   
   // List all videos
   rpc ListVideos(ListVideosRequest) returns (ListVideosResponse);
+  
+  // Parse batch file for preview
+  rpc ParseBatchFile(ParseFileRequest) returns (ParseFileResponse);
 }
 
 // Ingestion Messages
 message IngestRequest {
   string video_url = 1;
+  string video_name = 2; // NEW: Custom name for the video
 }
 
 message IngestResponse {
@@ -67,4 +71,20 @@ message VideoInfo {
 
 message ListVideosResponse {
   repeated VideoInfo videos = 1;
+}
+
+// Parse File Messages
+message ParseFileRequest {
+  bytes file_content = 1;
+  string filename = 2;
+}
+
+message ParsedVideo {
+  string video_name = 1;
+  string url = 2;
+}
+
+message ParseFileResponse {
+  repeated ParsedVideo videos = 1;
+  string error_message = 2;
 }
