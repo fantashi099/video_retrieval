@@ -263,10 +263,12 @@ def store_vectors_task(self, vectors: list, youtube_id: str):
         for point in vectors:
             point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{youtube_id}_{point['scene_idx']}"))
             
+            segment_url = f"https://youtube.com/watch?v={youtube_id}&t={int(point['start_time'])}"
+            
             payload = {
                 "youtube_id": youtube_id,
                 "video_name": video_name,
-                "url": video_url,
+                "url": segment_url,
                 "scene_idx": point["scene_idx"],
                 "start_time": point["start_time"],
                 "end_time": point["end_time"]

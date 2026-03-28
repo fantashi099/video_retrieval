@@ -17,6 +17,9 @@ service VideoSearchService {
   
   // Parse batch file for preview
   rpc ParseBatchFile(ParseFileRequest) returns (ParseFileResponse);
+  
+  // Delete a video
+  rpc DeleteVideo(DeleteVideoRequest) returns (DeleteVideoResponse);
 }
 
 // Ingestion Messages
@@ -87,4 +90,14 @@ message ParsedVideo {
 message ParseFileResponse {
   repeated ParsedVideo videos = 1;
   string error_message = 2;
+}
+
+// Delete Video Messages
+message DeleteVideoRequest {
+  string youtube_id = 1;
+}
+
+message DeleteVideoResponse {
+  bool success = 1;
+  string message = 2;
 }

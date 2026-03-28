@@ -188,6 +188,53 @@ class VideoSearchServiceServicer(video_search_pb2_grpc.VideoSearchServiceService
         finally:
             db.close()
 
+    def DeleteVideo(self, request, context):
+        youtube_id = request.youtube_id
+        logging.info(f"Received DeleteVideo request for: {youtube_id}")
+        
+        db = SessionLocal()
+        try:
+            # 1. Delete vectors from Qdrant
+            try:
+                from qdrant_client.models import Filter, FieldCondition, MatchValue
+                qdrant_client.delete(
+                    collection_name=QDRANT_COLLECTION,
+                    points_selector=Filter(
+                        must=[FieldCondition(key="youtube_id", match=MatchValue(value=youtube_id))]
+                    )
+                )
+                logging.info(f"Deleted vectors for {youtube_id} from Qdrant.")
+            except Exception as e:
+                logging.warning(f"Qdrant deletion warning (may not exist): {e}")
+
+            # 2. Delete video record from PostgreSQL
+            video = db.query(Video).filter(Video.youtube_id == youtube_id).first()
+            if video:
+                db.delete(video)
+
+            # 3. Delete all related job records
+            jobs = db.query(Job).filter(Job.video_url.contains(youtube_id)).all()
+            for job in jobs:
+                db.delete(job)
+
+            db.commit()
+            logging.info(f"Deleted all records for {youtube_id}.")
+            
+            return video_search_pb2.DeleteVideoResponse(
+                success=True,
+                message=f"Video {youtube_id} deleted successfully."
+            )
+        except Exception as e:
+            logging.error(f"Error deleting video: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return video_search_pb2.DeleteVideoResponse(
+                success=False,
+                message=str(e)
+            )
+        finally:
+            db.close()
+
 def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     video_search_pb2_grpc.add_VideoSearchServiceServicer_to_server(VideoSearchServiceServicer(), server)

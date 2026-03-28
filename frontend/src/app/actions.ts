@@ -81,3 +81,16 @@ export async function parseFileAction(formData: FormData): Promise<any> {
         return { error: e.message };
     }
 }
+
+export async function deleteVideoAction(youtubeId: string): Promise<any> {
+    return new Promise((resolve) => {
+        grpcClient.DeleteVideo({ youtube_id: youtubeId }, (err: any, response: any) => {
+            if (err) {
+                console.error("gRPC Error in DeleteVideo:", err);
+                resolve({ error: err.message });
+            } else {
+                resolve({ success: response.success, message: response.message });
+            }
+        });
+    });
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { listVideosAction } from "../actions";
+import { listVideosAction, deleteVideoAction } from "../actions";
 
 interface VideoInfo {
     youtube_id: string;
@@ -15,6 +15,7 @@ export default function VideosPage() {
     const [videos, setVideos] = useState<VideoInfo[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [deleting, setDeleting] = useState<string | null>(null);
 
     const fetchVideos = async () => {
         setLoading(true);
@@ -104,6 +105,23 @@ export default function VideosPage() {
                   `}>
                                         {video.status}
                                     </span>
+                                    <button
+                                        onClick={async () => {
+                                            if (!confirm(`Delete "${video.title || video.youtube_id}" and all its vectors?`)) return;
+                                            setDeleting(video.youtube_id);
+                                            const res = await deleteVideoAction(video.youtube_id);
+                                            setDeleting(null);
+                                            if (res.error) {
+                                                setError(res.error);
+                                            } else {
+                                                setVideos(prev => prev.filter(v => v.youtube_id !== video.youtube_id));
+                                            }
+                                        }}
+                                        disabled={deleting === video.youtube_id}
+                                        className="text-[10px] px-2.5 py-1 rounded-full font-bold uppercase tracking-wider border bg-red-900/30 text-red-400 border-red-800/50 hover:bg-red-800/50 transition-colors disabled:opacity-50"
+                                    >
+                                        {deleting === video.youtube_id ? 'Deleting...' : 'Delete'}
+                                    </button>
                                 </div>
                             </div>
                         </div>
