@@ -73,6 +73,7 @@ In a separate terminal (with your `aura_retrieval` environment activated), start
 
 ```bash
 conda activate aura_retrieval
+export PYTHONPATH=$(pwd)
 python -m src.server
 ```
 

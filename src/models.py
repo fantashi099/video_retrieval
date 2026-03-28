@@ -34,3 +34,4 @@ class Job(Base):
     error_log = Column(Text, nullable=True)
     retry_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

@@ -50,21 +50,27 @@ def download_video_task(self, video_url: str, job_id: str = None, video_name: st
             # Check for duplicate
             existing_video = db.query(Video).filter(Video.youtube_id == youtube_id).first()
             if existing_video:
-                print(f"Video {youtube_id} already exists in database.")
-                job.status = StatusEnum.INDEXED
+                if existing_video.status == StatusEnum.INDEXED:
+                    print(f"Video {youtube_id} already exists and is fully indexed.")
+                    job.status = StatusEnum.INDEXED
+                    db.commit()
+                    return {"youtube_id": youtube_id, "status": "duplicate"}
+                else:
+                    print(f"Video {youtube_id} exists but is {existing_video.status}. Restarting processing...")
+                    video = existing_video
+                    video.status = StatusEnum.PROCESSING
+                    db.commit()
+            else:
+                # Create video record
+                video = Video(
+                    youtube_id=youtube_id,
+                    title=title,
+                    url=video_url,
+                    duration=duration,
+                    status=StatusEnum.PROCESSING
+                )
+                db.add(video)
                 db.commit()
-                return {"youtube_id": youtube_id, "status": "duplicate"}
-            
-            # Create video record
-            video = Video(
-                youtube_id=youtube_id,
-                title=title,
-                url=video_url,
-                duration=duration,
-                status=StatusEnum.PROCESSING
-            )
-            db.add(video)
-            db.commit()
             
             print(f"Downloading video {youtube_id}...")
             error_code = ydl.download([video_url])
@@ -149,8 +155,6 @@ def segment_video_task(self, video_path: str, youtube_id: str):
     print(f"Detected {len(scene_list)} scenes.")
     
     # Free VRAM
-    import torch
-    import gc
     del model
     torch.cuda.empty_cache()
     gc.collect()
@@ -248,38 +252,45 @@ def store_vectors_task(self, vectors: list, youtube_id: str):
             vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
         )
         
-    points = []
-    for point in vectors:
-        point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{youtube_id}_{point['scene_idx']}"))
-        
-        payload = {
-            "youtube_id": youtube_id,
-            "scene_idx": point["scene_idx"],
-            "start_time": point["start_time"],
-            "end_time": point["end_time"]
-        }
-        
-        points.append(
-            PointStruct(id=point_id, vector=point["vector"], payload=payload)
-        )
-        
-    print(f"Uploading {len(points)} points to Qdrant...")
-    operation_info = client.upsert(
-        collection_name=COLLECTION_NAME,
-        wait=True,
-        points=points
-    )
-    
-    print(f"Upload finished. Status: {operation_info.status}")
-    
     # Mark job and video as fully INDEXED
     db = SessionLocal()
     try:
-        job = db.query(Job).filter(Job.video_url.contains(youtube_id)).first()
-        vid = db.query(Video).filter(Video.youtube_id == youtube_id).first()
-        if job:
+        vid_record = db.query(Video).filter(Video.youtube_id == youtube_id).first()
+        video_name = vid_record.title if vid_record else "Unknown"
+        video_url = vid_record.url if vid_record else ""
+
+        points = []
+        for point in vectors:
+            point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{youtube_id}_{point['scene_idx']}"))
+            
+            payload = {
+                "youtube_id": youtube_id,
+                "video_name": video_name,
+                "url": video_url,
+                "scene_idx": point["scene_idx"],
+                "start_time": point["start_time"],
+                "end_time": point["end_time"]
+            }
+            
+            points.append(
+                PointStruct(id=point_id, vector=point["vector"], payload=payload)
+            )
+            
+        print(f"Uploading {len(points)} points to Qdrant...")
+        operation_info = client.upsert(
+            collection_name=COLLECTION_NAME,
+            wait=True,
+            points=points
+        )
+        
+        print(f"Upload finished. Status: {operation_info.status}")
+        
+        # Mark ALL matching jobs as INDEXED (handles re-ingestion duplicates)
+        matching_jobs = db.query(Job).filter(Job.video_url.contains(youtube_id)).all()
+        for job in matching_jobs:
             job.status = StatusEnum.INDEXED
             job.error_log = "Success"
+        vid = db.query(Video).filter(Video.youtube_id == youtube_id).first()
         if vid:
             vid.status = StatusEnum.INDEXED
         db.commit()
