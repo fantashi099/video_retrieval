@@ -15,3 +15,4 @@ grpcio-tools
 sentencepiece
 pandas
 pyarrow
+accelerate

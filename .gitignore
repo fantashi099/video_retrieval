@@ -58,3 +58,5 @@ data/*
 qdrant_data
 tmp
 src/protos/*pb2*
+celerybeat-schedule*
+pg_data/

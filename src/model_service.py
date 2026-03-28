@@ -4,7 +4,7 @@ import time
 import logging
 import torch
 import transformers
-from transformers import SiglipImageProcessor, SiglipModel, SiglipTokenizer
+from transformers import AutoProcessor, AutoModel
 from PIL import Image
 import io
 
@@ -18,13 +18,12 @@ compute_dtype = torch.float16 if device == "cuda" else torch.float32
 
 print(f"Loading SigLIP model for dedicated Model Service on {device} ({compute_dtype})...")
 model_id = "google/siglip2-base-patch16-224"
-siglip_model = SiglipModel.from_pretrained(
+siglip_model = AutoModel.from_pretrained(
     model_id,
     attn_implementation='sdpa',
     torch_dtype=compute_dtype,
 ).to(device)
-siglip_processor = SiglipImageProcessor.from_pretrained(model_id)
-siglip_tokenizer = SiglipTokenizer.from_pretrained("google/siglip-base-patch16-224")
+siglip_processor = AutoProcessor.from_pretrained(model_id)
 
 class ModelServiceServicer(model_service_pb2_grpc.ModelServiceServicer):
     
@@ -36,7 +35,7 @@ class ModelServiceServicer(model_service_pb2_grpc.ModelServiceServicer):
             return model_service_pb2.EmbedTextResponse()
             
         try:
-            inputs = siglip_tokenizer(text=[text], padding="max_length", return_tensors="pt").to(device)
+            inputs = siglip_processor(text=[text], padding="max_length", return_tensors="pt").to(device)
             with torch.no_grad():
                 text_outputs = siglip_model.get_text_features(input_ids=inputs.input_ids)
                 
