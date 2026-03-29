@@ -46,7 +46,6 @@ message JobStatusResponse {
 message SearchRequest {
   string query_text = 1;
   int32 limit = 2;
-  // Optional filters could be added here in the future
 }
 
 message SearchResult {
@@ -55,6 +54,7 @@ message SearchResult {
   float start_time = 3;
   float end_time = 4;
   float match_score = 5;
+  string video_name = 6;
 }
 
 message SearchResponse {

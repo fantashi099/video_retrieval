@@ -2,9 +2,13 @@
 
 import { grpcClient } from '@/lib/grpc';
 
-export async function searchVideoAction(query: string, limit: number = 5): Promise<any> {
+export async function searchVideoAction(query: string, limit: number = 5, youtubeIdFilter: string = ""): Promise<any> {
     return new Promise((resolve) => {
-        grpcClient.SearchVideo({ query_text: query, limit }, (err: any, response: any) => {
+        const request: any = { query_text: query, limit };
+        if (youtubeIdFilter) {
+            request.youtube_id_filter = youtubeIdFilter;
+        }
+        grpcClient.SearchVideo(request, (err: any, response: any) => {
             if (err) {
                 console.error("gRPC Error in SearchVideo:", err);
                 resolve({ error: err.message });

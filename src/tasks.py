@@ -139,6 +139,19 @@ def segment_video_task(self, video_path: str, youtube_id: str):
     # Convert to scenes
     scenes_frames = model.predictions_to_scenes(all_frame_predictions.cpu().numpy()).tolist()
     
+    # Edge Case: Zero-segment fallback
+    # If TransNetV2 finds no scene boundaries
+    if len(scenes_frames) == 0:
+        print("WARNING: TransNetV2 found 0 scenes. Falling back to fixed 10s intervals.")
+        cap_fallback = cv2.VideoCapture(video_path)
+        total_frames = int(cap_fallback.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap_fallback.release()
+        interval_frames = int(fps * 10)
+        scenes_frames = [
+            [i, min(i + interval_frames - 1, total_frames - 1)]
+            for i in range(0, total_frames, interval_frames)
+        ]
+    
     scene_list = []
     for i, (start_frame, end_frame) in enumerate(scenes_frames):
         start_sec = start_frame / fps
@@ -298,6 +311,12 @@ def store_vectors_task(self, vectors: list, youtube_id: str):
         db.commit()
     finally:
         db.close()
+    
+    # Auto-cleanup: delete the temp video file now that vectors are safely in Qdrant
+    filepath = os.path.join(TMP_DIR, f"{youtube_id}.mp4")
+    if os.path.exists(filepath):
+        os.remove(filepath)
+        print(f"Cleaned up temp file: {filepath}")
     
     return {"youtube_id": youtube_id, "status": operation_info.status, "points_inserted": len(points)}
 

@@ -3,6 +3,11 @@
 import { useState } from "react";
 import { searchVideoAction } from "./actions";
 
+interface VideoOption {
+  youtube_id: string;
+  title: string;
+}
+
 export default function Home() {
   const [query, setQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
@@ -16,7 +21,7 @@ export default function Home() {
     setIsSearching(true);
     setError(null);
     try {
-      const response = await searchVideoAction(query, 5);
+      const response = await searchVideoAction(query, 10);
       if (response.error) {
         setError(response.error);
       } else {
@@ -40,28 +45,30 @@ export default function Home() {
         </p>
       </div>
 
-      <div className="w-full max-w-2xl relative">
+      <div className="w-full max-w-2xl space-y-3">
         <form onSubmit={handleSearch}>
-          <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-            <svg className="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+              <svg className="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              disabled={isSearching}
+              className="w-full bg-slate-900 border border-slate-700/50 rounded-2xl py-4 pl-12 pr-24 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-transparent transition-all shadow-xl disabled:opacity-50"
+              placeholder="Search for a scene... (e.g. 'A man speaking at a podium')"
+            />
+            <button
+              type="submit"
+              disabled={isSearching || !query.trim()}
+              className="absolute inset-y-2 right-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:text-slate-400 text-white text-sm font-semibold py-2 px-4 rounded-xl transition-colors shrink-0"
+            >
+              {isSearching ? "Searching..." : "Search"}
+            </button>
           </div>
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            disabled={isSearching}
-            className="w-full bg-slate-900 border border-slate-700/50 rounded-2xl py-4 pl-12 pr-24 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-transparent transition-all shadow-xl disabled:opacity-50"
-            placeholder="Search for a scene... (e.g. 'A man speaking at a podium')"
-          />
-          <button
-            type="submit"
-            disabled={isSearching || !query.trim()}
-            className="absolute inset-y-2 right-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:text-slate-400 text-white text-sm font-semibold py-2 px-4 rounded-xl transition-colors shrink-0"
-          >
-            {isSearching ? "Searching..." : "Search"}
-          </button>
         </form>
       </div>
 
@@ -80,7 +87,6 @@ export default function Home() {
             {results.map((result, idx) => (
               <div key={idx} className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-lg hover:border-indigo-500/50 transition-colors">
                 <div className="relative aspect-video bg-black">
-                  {/* We will embed the iframe replacing this placeholder later if possible. For now a thumbnail or iframe placeholder */}
                   <iframe
                     width="100%"
                     height="100%"
@@ -94,11 +100,11 @@ export default function Home() {
                 </div>
                 <div className="p-5 space-y-2">
                   <div className="flex justify-between items-start">
-                    <h3 className="font-semibold text-lg line-clamp-1" title={result.youtube_id}>
-                      Video: {result.youtube_id}
+                    <h3 className="font-semibold text-lg line-clamp-1" title={result.video_name || result.youtube_id}>
+                      {result.video_name || result.youtube_id}
                     </h3>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-900/50 text-indigo-300 border border-indigo-700/50">
-                      Score: {result.match_score.toFixed(3)}
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-900/50 text-indigo-300 border border-indigo-700/50 shrink-0 ml-2">
+                      {result.match_score.toFixed(3)}
                     </span>
                   </div>
                   <div className="flex items-center text-sm text-slate-400 gap-4">

@@ -142,17 +142,18 @@ class VideoSearchServiceServicer(video_search_pb2_grpc.VideoSearchServiceService
                 
             query_vector = list(embed_res.embedding)
 
-            # 2. Search Qdrant using the new query_points API
+            # 2. Search Qdrant
             search_results = qdrant_client.query_points(
                 collection_name=QDRANT_COLLECTION,
                 query=query_vector,
-                limit=limit
+                limit=limit,
             ).points
             
             # 3. Format Response
             for hit in search_results:
                 result = response.results.add()
                 result.youtube_id = hit.payload.get("youtube_id", "")
+                result.video_name = hit.payload.get("video_name", "")
                 result.scene_idx = hit.payload.get("scene_idx", 0)
                 result.start_time = hit.payload.get("start_time", 0.0)
                 result.end_time = hit.payload.get("end_time", 0.0)
