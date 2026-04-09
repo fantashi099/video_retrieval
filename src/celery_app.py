@@ -16,6 +16,10 @@ celery_app.conf.update(
     result_serializer='json',
     timezone='UTC',
     enable_utc=True,
+    # Recycle workers after every task to forcefully release GPU VRAM/CUDA context
+    worker_max_tasks_per_child=1,
+    # Disable prefetching to ensure VRAM is only used when a task is actually running
+    worker_prefetch_multiplier=1,
 )
 
 from celery.schedules import crontab

@@ -98,7 +98,7 @@ export default function Home() {
                     className="absolute inset-0"
                   ></iframe>
                 </div>
-                <div className="p-5 space-y-2">
+                <div className="p-5 space-y-3">
                   <div className="flex justify-between items-start">
                     <h3 className="font-semibold text-lg line-clamp-1" title={result.video_name || result.youtube_id}>
                       {result.video_name || result.youtube_id}
@@ -107,9 +107,22 @@ export default function Home() {
                       {result.match_score.toFixed(3)}
                     </span>
                   </div>
-                  <div className="flex items-center text-sm text-slate-400 gap-4">
-                    <span>🎬 Scene {result.scene_idx}</span>
-                    <span>⏱️ {result.start_time.toFixed(1)}s - {result.end_time.toFixed(1)}s</span>
+                  <div className="flex flex-wrap items-center text-xs gap-2 mt-2">
+                    <div className="flex items-center text-slate-400 gap-2 mr-2">
+                      <span>🎬 {result.scene_idx}</span>
+                      <span>⏱️ {result.start_time.toFixed(1)}s - {result.end_time.toFixed(1)}s</span>
+                    </div>
+                    {result.ocr_text && (
+                      <span className="px-2 py-0.5 rounded bg-emerald-900/30 text-emerald-400 border border-emerald-800/50 cursor-help" title={result.ocr_text}>📝 OCR</span>
+                    )}
+                    {result.asr_text && (
+                      <span className="px-2 py-0.5 rounded bg-blue-900/30 text-blue-400 border border-blue-800/50 cursor-help" title={result.asr_text}>🎙️ Audio</span>
+                    )}
+                    {result.tags && result.tags.map((tag: string, i: number) => (
+                      <span key={i} className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                        {tag}
+                      </span>
+                    ))}
                   </div>
                 </div>
               </div>

@@ -19,9 +19,9 @@ export async function searchVideoAction(query: string, limit: number = 5, youtub
     });
 }
 
-export async function ingestVideoAction(url: string, videoName: string = ""): Promise<any> {
+export async function ingestVideoAction(url: string, videoName: string = "", force: boolean = false): Promise<any> {
     return new Promise((resolve) => {
-        grpcClient.IngestVideo({ video_url: url, video_name: videoName }, (err: any, response: any) => {
+        grpcClient.IngestVideo({ video_url: url, video_name: videoName, force }, (err: any, response: any) => {
             if (err) {
                 console.error("gRPC Error in IngestVideo:", err);
                 resolve({ error: err.message });
@@ -91,6 +91,32 @@ export async function deleteVideoAction(youtubeId: string): Promise<any> {
         grpcClient.DeleteVideo({ youtube_id: youtubeId }, (err: any, response: any) => {
             if (err) {
                 console.error("gRPC Error in DeleteVideo:", err);
+                resolve({ error: err.message });
+            } else {
+                resolve({ success: response.success, message: response.message });
+            }
+        });
+    });
+}
+
+export async function listJobsAction(limit: number = 10): Promise<any> {
+    return new Promise((resolve) => {
+        grpcClient.ListJobs({ limit }, (err: any, response: any) => {
+            if (err) {
+                console.error("gRPC Error in ListJobs:", err);
+                resolve({ error: err.message });
+            } else {
+                resolve({ jobs: response.jobs || [] });
+            }
+        });
+    });
+}
+
+export async function deleteJobAction(jobId: string): Promise<any> {
+    return new Promise((resolve) => {
+        grpcClient.DeleteJob({ job_id: jobId }, (err: any, response: any) => {
+            if (err) {
+                console.error("gRPC Error in DeleteJob:", err);
                 resolve({ error: err.message });
             } else {
                 resolve({ success: response.success, message: response.message });

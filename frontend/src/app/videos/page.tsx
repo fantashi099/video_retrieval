@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { listVideosAction, deleteVideoAction } from "../actions";
+import { listVideosAction, deleteVideoAction, ingestVideoAction } from "../actions";
 
 interface VideoInfo {
     youtube_id: string;
@@ -21,14 +21,14 @@ export default function VideosPage() {
         setLoading(true);
         setError(null);
         try {
-            const response = await listVideosAction();
-            if (response.error) {
-                setError(response.error);
+            const res = await listVideosAction();
+            if (res.error) {
+                setError(res.error);
             } else {
-                setVideos(response.videos);
+                setVideos(res.videos || []);
             }
         } catch (err: any) {
-            setError(err.message || "An unexpected error occurred while fetching videos.");
+            setError(err.message || "An unexpected error occurred.");
         } finally {
             setLoading(false);
         }
@@ -39,24 +39,28 @@ export default function VideosPage() {
     }, []);
 
     const formatDuration = (seconds: number) => {
-        const min = Math.floor(seconds / 60);
-        const sec = seconds % 60;
-        return `${min}:${sec.toString().padStart(2, "0")}`;
+        const hrs = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        const secs = Math.floor(seconds % 60);
+        if (hrs > 0) return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
     return (
-        <div className="flex flex-col items-center justify-start pt-12 min-h-[60vh] space-y-12">
-            <div className="text-center space-y-4 max-w-2xl">
-                <h1 className="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
-                    Indexed Videos
-                </h1>
-                <p className="text-lg text-slate-400">
-                    A full repository of every video ingested and encoded in the database.
+        <div className="flex flex-col space-y-8 max-w-6xl mx-auto px-4 py-8">
+            <div className="flex flex-col space-y-4">
+                <div className="flex justify-between items-center">
+                    <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
+                        Indexed Videos
+                    </h1>
+                </div>
+                <p className="text-slate-400">
+                    A list of all YouTube videos that have been downloaded, segmented, and embedded in the vector database.
                 </p>
             </div>
 
-            <div className="w-full max-w-4xl space-y-6">
-                <div className="flex justify-between items-center border-b border-white/10 pb-4">
+            <div className="bg-slate-900/50 border border-slate-800 rounded-3xl p-6 backdrop-blur-sm">
+                <div className="flex justify-between items-center mb-8">
                     <h2 className="text-xl font-semibold">Total: {videos.length} videos</h2>
                     <button
                         onClick={fetchVideos}
@@ -68,7 +72,7 @@ export default function VideosPage() {
                 </div>
 
                 {error && (
-                    <div className="p-4 bg-red-900/50 border border-red-500/50 rounded-xl text-red-200">
+                    <div className="p-4 bg-red-900/50 border border-red-500/50 rounded-xl text-red-200 mb-6">
                         <p className="font-semibold">Failed to load videos</p>
                         <p className="text-sm">{error}</p>
                     </div>
@@ -105,30 +109,57 @@ export default function VideosPage() {
                   `}>
                                         {video.status}
                                     </span>
-                                    <button
-                                        onClick={async () => {
-                                            if (!confirm(`Delete "${video.title || video.youtube_id}" and all its vectors?`)) return;
-                                            setDeleting(video.youtube_id);
-                                            const res = await deleteVideoAction(video.youtube_id);
-                                            setDeleting(null);
-                                            if (res.error) {
-                                                setError(res.error);
-                                            } else {
-                                                setVideos(prev => prev.filter(v => v.youtube_id !== video.youtube_id));
-                                            }
-                                        }}
-                                        disabled={deleting === video.youtube_id}
-                                        className="text-[10px] px-2.5 py-1 rounded-full font-bold uppercase tracking-wider border bg-red-900/30 text-red-400 border-red-800/50 hover:bg-red-800/50 transition-colors disabled:opacity-50"
-                                    >
-                                        {deleting === video.youtube_id ? 'Deleting...' : 'Delete'}
-                                    </button>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={async () => {
+                                                if (!confirm(`Reprocess "${video.title || video.youtube_id}" to update metadata?`)) return;
+                                                setDeleting(video.youtube_id);
+                                                const res = await ingestVideoAction(video.url, video.title, true);
+                                                setDeleting(null);
+                                                if (res.error) {
+                                                    setError(res.error);
+                                                } else {
+                                                    alert("Reprocessing started! Check ingest tab for status.");
+                                                    window.location.href = "/ingest";
+                                                }
+                                            }}
+                                            disabled={!!deleting}
+                                            className="text-[10px] px-2.5 py-1 rounded-full font-bold uppercase tracking-wider border bg-indigo-900/30 text-indigo-400 border-indigo-800/50 hover:bg-indigo-800/50 transition-colors disabled:opacity-50"
+                                        >
+                                            {deleting === video.youtube_id ? 'Starting...' : 'Reprocess'}
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                if (!confirm(`Delete "${video.title || video.youtube_id}" and all its vectors?`)) return;
+                                                setDeleting(video.youtube_id);
+                                                const res = await deleteVideoAction(video.youtube_id);
+                                                setDeleting(null);
+                                                if (res.error) {
+                                                    setError(res.error);
+                                                } else {
+                                                    setVideos(prev => prev.filter(v => v.youtube_id !== video.youtube_id));
+                                                }
+                                            }}
+                                            disabled={!!deleting}
+                                            className="text-[10px] px-2.5 py-1 rounded-full font-bold uppercase tracking-wider border bg-red-900/30 text-red-400 border-red-800/50 hover:bg-red-800/50 transition-colors disabled:opacity-50"
+                                        >
+                                            {deleting === video.youtube_id ? 'Deleting...' : 'Delete'}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     ))}
+
                     {loading && videos.length === 0 && (
                         <div className="col-span-full h-32 flex items-center justify-center text-slate-500">
                             <span className="animate-pulse">Loading videos...</span>
+                        </div>
+                    )}
+
+                    {!loading && videos.length === 0 && (
+                        <div className="col-span-full h-32 flex items-center justify-center text-slate-500 italic">
+                            No videos indexed yet.
                         </div>
                     )}
                 </div>

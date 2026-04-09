@@ -35,7 +35,8 @@ class VideoSearchServiceServicer(video_search_pb2_grpc.VideoSearchServiceService
             job_id_str = str(job.id)
             
             # Fire the celery background task
-            download_video_task.delay(video_url, job_id_str, video_name)
+            force = getattr(request, 'force', False)
+            download_video_task.delay(video_url, job_id_str, video_name, force=force)
             
             return video_search_pb2.IngestResponse(
                 job_id=job_id_str,
@@ -115,6 +116,32 @@ class VideoSearchServiceServicer(video_search_pb2_grpc.VideoSearchServiceService
         finally:
             db.close()
 
+    def ListJobs(self, request, context):
+        limit = request.limit if request.limit > 0 else 10
+        logging.info(f"Received ListJobs request (limit: {limit})")
+        
+        db = SessionLocal()
+        try:
+            jobs = db.query(Job).order_by(Job.created_at.desc()).limit(limit).all()
+            response = video_search_pb2.ListJobsResponse()
+            
+            for j in jobs:
+                job_info = response.jobs.add()
+                job_info.id = str(j.id)
+                job_info.url = j.video_url
+                job_info.status = j.status.value if j.status else "UNKNOWN"
+                job_info.message = j.error_log if j.error_log else ""
+                job_info.video_name = j.video_name if j.video_name else ""
+                
+            return response
+        except Exception as e:
+            logging.error(f"Error listing jobs: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return video_search_pb2.ListJobsResponse()
+        finally:
+            db.close()
+
     def SearchVideo(self, request, context):
         query_text = request.query_text
         limit = request.limit if request.limit > 0 else 5
@@ -142,22 +169,45 @@ class VideoSearchServiceServicer(video_search_pb2_grpc.VideoSearchServiceService
                 
             query_vector = list(embed_res.embedding)
 
-            # 2. Search Qdrant
+            # 2. Search Qdrant using the new query_points API
             search_results = qdrant_client.query_points(
                 collection_name=QDRANT_COLLECTION,
                 query=query_vector,
-                limit=limit,
+                limit=limit * 3  # Fetch more for reranking
             ).points
+            
+            # Simple reranking based on multi-modal metadata
+            query_lower = query_text.lower()
+            query_words = set(query_lower.split())
+            
+            for hit in search_results:
+                ocr = hit.payload.get("ocr_text", "").lower()
+                asr = hit.payload.get("asr_text", "").lower()
+                tags = [t.lower() for t in hit.payload.get("tags", [])]
+                
+                # Boost if exact phrase match in text
+                if query_lower in ocr or query_lower in asr:
+                    hit.score += 0.2
+                # Boost if word match in tags
+                if any(w in tags for w in query_words):
+                    hit.score += 0.15
+
+            # Sort again by adjusted score and slice to original limit
+            search_results.sort(key=lambda x: x.score, reverse=True)
+            search_results = search_results[:limit]
             
             # 3. Format Response
             for hit in search_results:
                 result = response.results.add()
                 result.youtube_id = hit.payload.get("youtube_id", "")
-                result.video_name = hit.payload.get("video_name", "")
                 result.scene_idx = hit.payload.get("scene_idx", 0)
                 result.start_time = hit.payload.get("start_time", 0.0)
                 result.end_time = hit.payload.get("end_time", 0.0)
                 result.match_score = hit.score
+                result.video_name = hit.payload.get("video_name", "")
+                result.ocr_text = hit.payload.get("ocr_text", "")
+                result.asr_text = hit.payload.get("asr_text", "")
+                result.tags.extend(hit.payload.get("tags", []))
                 
             return response
             
@@ -233,6 +283,37 @@ class VideoSearchServiceServicer(video_search_pb2_grpc.VideoSearchServiceService
                 success=False,
                 message=str(e)
             )
+        finally:
+            db.close()
+
+    def DeleteJob(self, request, context):
+        job_id = request.job_id
+        logging.info(f"Received DeleteJob request for: {job_id}")
+        
+        db = SessionLocal()
+        try:
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if not job:
+                # If job not found, we still return success=True to avoid UI confusion
+                # (maybe it was already deleted)
+                return video_search_pb2.DeleteJobResponse(
+                    success=True,
+                    message="Job already removed."
+                )
+            
+            db.delete(job)
+            db.commit()
+            logging.info(f"Deleted job {job_id}.")
+            
+            return video_search_pb2.DeleteJobResponse(
+                success=True,
+                message="Job removed from history."
+            )
+        except Exception as e:
+            logging.error(f"Error deleting job: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return video_search_pb2.DeleteJobResponse(success=False, message=str(e))
         finally:
             db.close()
 

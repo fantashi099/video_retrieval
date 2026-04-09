@@ -186,25 +186,45 @@ export function BatchUpload() {
             {jobs.length > 0 && (
                 <div className="space-y-4 mt-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                     <h3 className="text-lg font-semibold border-b border-white/10 pb-2 text-slate-300">Batch Processing Status</h3>
-                    <div className="space-y-3 max-h-96 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-700">
+                    <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-700">
                         {jobs.map((job) => (
-                            <div key={job.id} className="bg-slate-800/50 rounded-xl border border-slate-700 flex items-center justify-between p-4 shadow-sm hover:shadow-md transition-shadow">
-                                <div className="flex flex-col truncate pr-4 w-[60%]">
-                                    <span className="text-sm font-bold text-indigo-300 truncate">{job.video_name}</span>
-                                    <span className="text-xs text-slate-400 truncate mt-1">{job.url}</span>
+                            <div key={job.id} className="bg-slate-900/40 backdrop-blur-md rounded-2xl border border-slate-700/50 p-5 group transition-all hover:border-indigo-500/30 hover:shadow-2xl hover:shadow-indigo-900/10">
+                                <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                                    <div className="flex-1 min-w-0 space-y-1">
+                                        <div className="flex items-center gap-2">
+                                            <div className="p-1.5 bg-slate-800 rounded-lg text-indigo-400 group-hover:scale-110 transition-transform">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 6 4 14" /><path d="M12 6v14" /><path d="M8 8v12" /><path d="M4 4v16" /></svg>
+                                            </div>
+                                            <span className="text-sm font-semibold text-slate-100 truncate block uppercase tracking-tight" title={job.video_name}>
+                                                {job.video_name}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono pl-8 truncate" title={job.url}>
+                                            <span>URL: {job.url}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-3 shrink-0 self-end md:self-start pt-1 md:pt-0">
+                                        <span className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-tighter border flex items-center gap-2
+                                            ${job.status === "INDEXED" ? "bg-emerald-900/20 text-emerald-400 border-emerald-500/30" :
+                                                job.status === "FAILED" || job.status === "ERROR" ? "bg-red-900/20 text-red-400 border-red-500/30" :
+                                                    "bg-indigo-900/20 text-indigo-400 border-indigo-500/30 animate-pulse"
+                                            }
+                                        `}>
+                                            {job.status === "INDEXED" && <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
+                                            {(job.status === "FAILED" || job.status === "ERROR") && <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>}
+                                            {job.status !== "INDEXED" && job.status !== "FAILED" && job.status !== "ERROR" && <div className="w-2 h-2 rounded-full bg-indigo-400 animate-ping" />}
+                                            {job.status}
+                                        </span>
+                                    </div>
                                 </div>
 
-                                <div className="flex items-center shrink-0 space-x-4">
-                                    <div className="text-xs text-right hidden sm:block">
-                                        <span className="text-slate-400 max-w-[200px] truncate block">{job.message || job.status}</span>
-                                    </div>
-                                    <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border
-                                        ${job.status === "INDEXED" ? "bg-emerald-900/30 text-emerald-400 border-emerald-800/50" :
-                                            job.status === "FAILED" || job.status === "ERROR" ? "bg-red-900/30 text-red-400 border-red-800/50" :
-                                                "bg-yellow-900/30 text-yellow-400 border-yellow-800/50 animate-pulse"}
-                                    `}>
-                                        {job.status}
-                                    </span>
+                                {/* Status Message Section */}
+                                <div className="mt-4 pl-8 border-l border-slate-700/50">
+                                    <p className="text-xs text-slate-400 leading-relaxed break-words">
+                                        <span className="text-slate-500 font-medium mr-2">Status:</span>
+                                        {job.message || "Processing..."}
+                                    </p>
                                 </div>
                             </div>
                         ))}

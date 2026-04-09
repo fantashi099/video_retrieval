@@ -16,3 +16,8 @@ sentencepiece
 pandas
 pyarrow
 accelerate
+faster-whisper
+easyocr
+ultralytics
+pydub
+torch --extra-index-url https://download.pytorch.org/whl/cu121
