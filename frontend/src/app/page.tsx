@@ -2,8 +2,9 @@
 
 import { useState, useRef, useCallback } from "react";
 import { searchVideoAction, searchByImageAction } from "./actions";
+import SketchCanvas, { SketchCanvasHandle } from "./SketchCanvas";
 
-type SearchMode = "text" | "image";
+type SearchMode = "text" | "image" | "sketch";
 
 export default function Home() {
   const [mode, setMode] = useState<SearchMode>("text");
@@ -17,6 +18,7 @@ export default function Home() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const sketchRef = useRef<SketchCanvasHandle>(null);
 
   const handleImageSelect = useCallback((file: File) => {
     if (!file.type.startsWith("image/")) {
@@ -47,12 +49,19 @@ export default function Home() {
     e.preventDefault();
     if (mode === "text" && !query.trim()) return;
     if (mode === "image" && !imageFile) return;
+    if (mode === "sketch" && sketchRef.current?.isEmpty()) return;
 
     setIsSearching(true);
     setError(null);
     try {
       let response;
-      if (mode === "image" && imageFile) {
+      if (mode === "sketch" && sketchRef.current) {
+        const blob = await sketchRef.current.toBlob();
+        if (!blob) { setError("Failed to capture sketch."); setIsSearching(false); return; }
+        const formData = new FormData();
+        formData.append("image", new File([blob], "sketch.png", { type: "image/png" }));
+        response = await searchByImageAction(formData, 10);
+      } else if (mode === "image" && imageFile) {
         const formData = new FormData();
         formData.append("image", imageFile);
         response = await searchByImageAction(formData, 10);
@@ -82,7 +91,7 @@ export default function Home() {
             Semantic Search
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Find scenes using text or images
+            Find scenes using text, images, or sketches
           </p>
         </div>
 
@@ -113,13 +122,25 @@ export default function Home() {
               </svg>
               Image
             </button>
+            <button
+              onClick={() => setMode("sketch")}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${mode === "sketch"
+                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/30"
+                : "text-slate-400 hover:text-slate-200"
+                }`}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              </svg>
+              Sketch
+            </button>
           </div>
         </div>
 
         {/* Search Form */}
         <div className="p-6 space-y-4">
           <form onSubmit={handleSearch} className="space-y-3">
-            {mode === "text" ? (
+            {mode === "text" && (
               /* Text Input */
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -136,7 +157,9 @@ export default function Home() {
                   placeholder="e.g. 'A man speaking at a podium'"
                 />
               </div>
-            ) : (
+            )}
+
+            {mode === "image" && (
               /* Image Upload */
               <div>
                 <input
@@ -195,9 +218,14 @@ export default function Home() {
               </div>
             )}
 
+            {mode === "sketch" && (
+              /* Sketch Canvas */
+              <SketchCanvas ref={sketchRef} />
+            )}
+
             <button
               type="submit"
-              disabled={isSearching || (mode === "text" ? !query.trim() : !imageFile)}
+              disabled={isSearching || (mode === "text" ? !query.trim() : mode === "image" ? !imageFile : false)}
               className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white text-sm font-semibold py-3 rounded-xl transition-all active:scale-[0.98] shadow-lg shadow-indigo-900/20"
             >
               {isSearching ? (
@@ -206,7 +234,7 @@ export default function Home() {
                   Searching...
                 </span>
               ) : (
-                mode === "image" ? "Search by Image" : "Search"
+                mode === "sketch" ? "Search by Sketch" : mode === "image" ? "Search by Image" : "Search"
               )}
             </button>
           </form>
@@ -230,7 +258,7 @@ export default function Home() {
                 </span>
               </div>
               <div className="text-[10px] text-slate-600">
-                {mode === "text" ? `Query: "${query}"` : `Image: ${imageFile?.name || "uploaded"}`}
+                {mode === "text" ? `Query: "${query}"` : mode === "image" ? `Image: ${imageFile?.name || "uploaded"}` : "Sketch query"}
               </div>
             </div>
           )}
@@ -239,7 +267,7 @@ export default function Home() {
               <svg className="h-10 w-10 mx-auto text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
               </svg>
-              <p className="text-xs">Describe a scene or upload an image</p>
+              <p className="text-xs">Describe a scene, upload an image, or sketch</p>
             </div>
           )}
         </div>
@@ -252,7 +280,7 @@ export default function Home() {
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <h2 className="text-xl font-semibold text-white">Results ({results.length})</h2>
               <span className="text-xs text-slate-500 bg-slate-800/50 px-3 py-1 rounded-full border border-slate-700/50">
-                {mode === "text" ? "🔤 Text Search" : "🖼️ Image Search"}
+                {mode === "text" ? "🔤 Text Search" : mode === "image" ? "🖼️ Image Search" : "✏️ Sketch Search"}
               </span>
             </div>
 
