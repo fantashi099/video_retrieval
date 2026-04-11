@@ -19,6 +19,33 @@ export async function searchVideoAction(query: string, limit: number = 5, youtub
     });
 }
 
+export async function searchByImageAction(formData: FormData, limit: number = 10): Promise<any> {
+    const file = formData.get('image') as File;
+    if (!file) return { error: "No image provided" };
+
+    try {
+        const bytes = await file.arrayBuffer();
+        const buffer = Buffer.from(bytes);
+
+        return new Promise((resolve) => {
+            grpcClient.SearchVideo({
+                query_text: "",
+                image_data: buffer,
+                limit
+            }, (err: any, response: any) => {
+                if (err) {
+                    console.error("gRPC Error in SearchByImage:", err);
+                    resolve({ error: err.message });
+                } else {
+                    resolve({ results: response.results });
+                }
+            });
+        });
+    } catch (e: any) {
+        return { error: e.message };
+    }
+}
+
 export async function ingestVideoAction(url: string, videoName: string = "", force: boolean = false): Promise<any> {
     return new Promise((resolve) => {
         grpcClient.IngestVideo({ video_url: url, video_name: videoName, force }, (err: any, response: any) => {

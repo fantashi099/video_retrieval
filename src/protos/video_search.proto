@@ -53,6 +53,7 @@ message JobStatusResponse {
 message SearchRequest {
   string query_text = 1;
   int32 limit = 2;
+  bytes image_data = 3;  // Optional: image bytes for image-based search
 }
 
 message SearchResult {

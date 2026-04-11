@@ -144,23 +144,32 @@ class VideoSearchServiceServicer(video_search_pb2_grpc.VideoSearchServiceService
 
     def SearchVideo(self, request, context):
         query_text = request.query_text
+        image_data = request.image_data
         limit = request.limit if request.limit > 0 else 5
-        logging.info(f"Received SearchVideo request for: '{query_text}' (limit: {limit})")
+        
+        is_image_search = len(image_data) > 0
+        logging.info(f"Received SearchVideo request (mode: {'image' if is_image_search else 'text'}, limit: {limit})")
         
         response = video_search_pb2.SearchResponse()
         
-        if not query_text.strip():
+        if not is_image_search and not query_text.strip():
             context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
-            context.set_details("Query text cannot be empty.")
+            context.set_details("Query text or image must be provided.")
             return response
             
         try:
-            # 1. Embed the search text using ModelService microservice
             from src.protos import model_service_pb2, model_service_pb2_grpc
+            
+            # 1. Get query embedding (text or image)
             with grpc.insecure_channel('localhost:50052') as channel:
                 model_stub = model_service_pb2_grpc.ModelServiceStub(channel)
-                embed_req = model_service_pb2.EmbedTextRequest(text=query_text)
-                embed_res = model_stub.EmbedText(embed_req)
+                
+                if is_image_search:
+                    embed_req = model_service_pb2.EmbedImageRequest(image_data=image_data)
+                    embed_res = model_stub.EmbedImage(embed_req)
+                else:
+                    embed_req = model_service_pb2.EmbedTextRequest(text=query_text)
+                    embed_res = model_stub.EmbedText(embed_req)
                 
             if not embed_res.embedding:
                 context.set_code(grpc.StatusCode.INTERNAL)
@@ -169,34 +178,32 @@ class VideoSearchServiceServicer(video_search_pb2_grpc.VideoSearchServiceService
                 
             query_vector = list(embed_res.embedding)
 
-            # 2. Search Qdrant using the new query_points API
+            # 2. Search Qdrant
             search_results = qdrant_client.query_points(
                 collection_name=QDRANT_COLLECTION,
                 query=query_vector,
-                limit=limit * 3  # Fetch more for reranking
+                limit=limit * 3 if not is_image_search else limit
             ).points
             
-            # Simple reranking based on multi-modal metadata
-            query_lower = query_text.lower()
-            query_words = set(query_lower.split())
-            
-            for hit in search_results:
-                ocr = hit.payload.get("ocr_text", "").lower()
-                asr = hit.payload.get("asr_text", "").lower()
-                tags = [t.lower() for t in hit.payload.get("tags", [])]
+            # 3. Reranking (text search only — metadata boosting doesn't apply to image similarity)
+            if not is_image_search and query_text.strip():
+                query_lower = query_text.lower()
+                query_words = set(query_lower.split())
                 
-                # Boost if exact phrase match in text
-                if query_lower in ocr or query_lower in asr:
-                    hit.score += 0.2
-                # Boost if word match in tags
-                if any(w in tags for w in query_words):
-                    hit.score += 0.15
+                for hit in search_results:
+                    ocr = hit.payload.get("ocr_text", "").lower()
+                    asr = hit.payload.get("asr_text", "").lower()
+                    tags = [t.lower() for t in hit.payload.get("tags", [])]
+                    
+                    if query_lower in ocr or query_lower in asr:
+                        hit.score += 0.2
+                    if any(w in tags for w in query_words):
+                        hit.score += 0.15
 
-            # Sort again by adjusted score and slice to original limit
-            search_results.sort(key=lambda x: x.score, reverse=True)
-            search_results = search_results[:limit]
+                search_results.sort(key=lambda x: x.score, reverse=True)
+                search_results = search_results[:limit]
             
-            # 3. Format Response
+            # 4. Format Response
             for hit in search_results:
                 result = response.results.add()
                 result.youtube_id = hit.payload.get("youtube_id", "")
